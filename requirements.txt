@@ -1,5 +1,5 @@
-fastapi
-openai
-supabase
-python-dotenv
-uvicorn
+fastapi==0.75.0
+uvicorn==0.17.0
+openai==0.11.4
+supabase==0.2.4
+python-dotenv==0.19.2
