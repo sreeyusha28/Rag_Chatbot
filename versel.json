@@ -1,0 +1,17 @@
+{
+    "version": 2,
+    "builds": [
+      {
+        "src": "api/query.py",
+        "use": "@vercel/python"
+      }
+    ],
+    "routes": [
+      {
+        "src": "/query",
+        "methods": ["POST"],
+        "dest": "api/query.py"
+      }
+    ]
+  }
+ 
