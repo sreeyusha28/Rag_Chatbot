@@ -26,7 +26,7 @@ def get_query_embedding(query: str):
     )
     return response.data[0].embedding
 
-@app.post("/query")
+@app.post("/api/query")
 async def query_handler(request: Request):
     try:
         body = await request.json()
