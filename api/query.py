@@ -1,8 +1,10 @@
 from fastapi import FastAPI, Request
-import json
 from supabase import create_client
 import openai
 import os
+from dotenv import load_dotenv  
+
+load_dotenv()  
 
 app = FastAPI()
 
@@ -14,7 +16,7 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 openai.api_key = OPENAI_API_KEY
 GPT_MODEL = "text-embedding-3-small"
 
-def get_query_embedding(query):
+def get_query_embedding(query: str):
     response = openai.embeddings.create(
         model=GPT_MODEL,
         input=query
@@ -29,12 +31,14 @@ async def query_handler(request: Request):
         top_k = body.get("top_k", 5)
 
         embedding = get_query_embedding(query_text)
+
         response = supabase.rpc("match_documents", {
             "query_embedding": embedding,
             "match_count": top_k
         }).execute()
 
-        context_chunks = [r["chunk_text"] for r in response.data]
+        matches = response.data
+        context_chunks = [r["content"] for r in matches]
         context = "\n\n".join(context_chunks)
 
         system_prompt = "You are a helpful assistant. Use the context below to answer the user's question."
@@ -52,7 +56,13 @@ async def query_handler(request: Request):
 
         return {
             "answer": final_answer,
-            "sources": context_chunks
+            "sources": [
+                {
+                    "id": r["id"],
+                    "content": r["content"],
+                    "similarity": r["similarity"]
+                } for r in matches
+            ]
         }
     except Exception as e:
         return {"error": str(e)}
