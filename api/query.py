@@ -3,10 +3,13 @@ from supabase import create_client
 import openai
 import os
 from dotenv import load_dotenv  
+from mangum import Mangum
 
 load_dotenv()  
 
+
 app = FastAPI()
+handler = Mangum(app)
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")

@@ -2,14 +2,14 @@
   "version": 2,
   "builds": [
     {
-      "src": "Dockerfile",
-      "use": "@vercel/docker"
+      "src": "api/query.py",
+      "use": "@vercel/python"
     }
   ],
   "routes": [
     {
       "src": "/api/query",
-      "dest": "/api/query.py"
+      "dest": "api/query.py"
     }
   ]
 }
