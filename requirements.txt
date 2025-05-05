@@ -1,3 +1,4 @@
-openai
+fastapi
 supabase
-python-dotenv
+openai
+uvicorn

@@ -1,9 +1,10 @@
-# api/query.py
-import os
+from fastapi import FastAPI, Request
 import json
 from supabase import create_client
 import openai
+import os
 
+app = FastAPI()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
@@ -20,9 +21,10 @@ def get_query_embedding(query):
     )
     return response.data[0].embedding
 
-def handler(request):
+@app.post("/query")
+async def query_handler(request: Request):
     try:
-        body = json.loads(request.body.decode("utf-8"))
+        body = await request.json()
         query_text = body.get("query", "")
         top_k = body.get("top_k", 5)
 
@@ -32,14 +34,7 @@ def handler(request):
             "match_count": top_k
         }).execute()
 
-        return {
-            "statusCode": 200,
-            "body": json.dumps({"results": [r["chunk_text"] for r in response.data]}),
-            "headers": {"Content-Type": "application/json"}
-        }
+        return {"results": [r["chunk_text"] for r in response.data]}
     except Exception as e:
-        return {
-            "statusCode": 500,
-            "body": json.dumps({"error": str(e)}),
-            "headers": {"Content-Type": "application/json"}
-        }
+        return {"error": str(e)}
+
