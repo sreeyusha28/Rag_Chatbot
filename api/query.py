@@ -34,7 +34,25 @@ async def query_handler(request: Request):
             "match_count": top_k
         }).execute()
 
-        return {"results": [r["chunk_text"] for r in response.data]}
+        context_chunks = [r["chunk_text"] for r in response.data]
+        context = "\n\n".join(context_chunks)
+
+        system_prompt = "You are a helpful assistant. Use the context below to answer the user's question."
+        user_prompt = f"Context:\n{context}\n\nQuestion: {query_text}"
+
+        completion = openai.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ]
+        )
+
+        final_answer = completion.choices[0].message.content.strip()
+
+        return {
+            "answer": final_answer,
+            "sources": context_chunks
+        }
     except Exception as e:
         return {"error": str(e)}
-
