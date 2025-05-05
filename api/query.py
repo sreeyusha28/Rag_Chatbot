@@ -1,7 +1,12 @@
-import json
+from fastapi import FastAPI, Request
 from supabase import create_client
 import openai
 import os
+from dotenv import load_dotenv  
+
+load_dotenv()  
+
+app = FastAPI()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
@@ -18,23 +23,21 @@ def get_query_embedding(query: str):
     )
     return response.data[0].embedding
 
-def handler(request, response):
+@app.post("/query")
+async def query_handler(request: Request):
     try:
-        body = json.loads(request.body or "{}")
+        body = await request.json()
         query_text = body.get("query", "")
         top_k = body.get("top_k", 5)
 
-        if not query_text:
-            raise ValueError("Query text is required.")
-
         embedding = get_query_embedding(query_text)
 
-        rpc_response = supabase.rpc("match_documents", {
+        response = supabase.rpc("match_documents", {
             "query_embedding": embedding,
             "match_count": top_k
         }).execute()
 
-        matches = rpc_response.data
+        matches = response.data
         context_chunks = [r["content"] for r in matches]
         context = "\n\n".join(context_chunks)
 
@@ -51,7 +54,7 @@ def handler(request, response):
 
         final_answer = completion.choices[0].message.content.strip()
 
-        result = {
+        return {
             "answer": final_answer,
             "sources": [
                 {
@@ -61,12 +64,5 @@ def handler(request, response):
                 } for r in matches
             ]
         }
-
-        response.status_code = 200
-        response.headers["Content-Type"] = "application/json"
-        response.body = json.dumps(result)
-
     except Exception as e:
-        response.status_code = 500
-        response.headers["Content-Type"] = "application/json"
-        response.body = json.dumps({"error": str(e)})
+        return {"error": str(e)}
