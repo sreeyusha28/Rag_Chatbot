@@ -1,15 +1,10 @@
-from fastapi import FastAPI, Request
 from supabase import create_client
 import openai
 import os
-from dotenv import load_dotenv  
-from mangum import Mangum
+from dotenv import load_dotenv
+import json
 
-load_dotenv()  
-
-
-app = FastAPI()
-handler = Mangum(app)
+load_dotenv()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
@@ -19,21 +14,16 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 openai.api_key = OPENAI_API_KEY
 GPT_MODEL = "text-embedding-3-small"
 
-def get_query_embedding(query: str):
-    response = openai.embeddings.create(
-        model=GPT_MODEL,
-        input=query
-    )
-    return response.data[0].embedding
-
-@app.post("/api/query")
-async def query_handler(request: Request):
+def handler(request):
     try:
-        body = await request.json()
+        body = json.loads(request.body.decode())
         query_text = body.get("query", "")
         top_k = body.get("top_k", 5)
 
-        embedding = get_query_embedding(query_text)
+        embedding = openai.embeddings.create(
+            model=GPT_MODEL,
+            input=query_text
+        ).data[0].embedding
 
         response = supabase.rpc("match_documents", {
             "query_embedding": embedding,
@@ -58,14 +48,22 @@ async def query_handler(request: Request):
         final_answer = completion.choices[0].message.content.strip()
 
         return {
-            "answer": final_answer,
-            "sources": [
-                {
-                    "id": r["id"],
-                    "content": r["content"],
-                    "similarity": r["similarity"]
-                } for r in matches
-            ]
+            "statusCode": 200,
+            "body": json.dumps({
+                "answer": final_answer,
+                "sources": [
+                    {
+                        "id": r["id"],
+                        "content": r["content"],
+                        "similarity": r["similarity"]
+                    } for r in matches
+                ]
+            }),
+            "headers": {"Content-Type": "application/json"}
         }
     except Exception as e:
-        return {"error": str(e)}
+        return {
+            "statusCode": 500,
+            "body": json.dumps({"error": str(e)}),
+            "headers": {"Content-Type": "application/json"}
+        }

@@ -1,15 +1,7 @@
 {
-  "version": 2,
-  "builds": [
-    {
-      "src": "api/query.py",
-      "use": "@vercel/python"
+  "functions": {
+    "api/query.py": {
+      "runtime": "python3.11"
     }
-  ],
-  "routes": [
-    {
-      "src": "/api/query",
-      "dest": "api/query.py"
-    }
-  ]
+  }
 }
