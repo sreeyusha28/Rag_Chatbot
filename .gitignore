@@ -2,4 +2,4 @@
 __pycache__/
 large_docs/
 scripts/
-api/query_fast_api
+api/query
