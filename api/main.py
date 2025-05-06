@@ -2,7 +2,10 @@ from fastapi import FastAPI, Request
 from supabase import create_client
 import openai
 import os
+from dotenv import load_dotenv  
 from mangum import Mangum
+
+load_dotenv()  
 
 app = FastAPI()
 handler = Mangum(app)
@@ -22,7 +25,7 @@ def get_query_embedding(query: str):
     )
     return response.data[0].embedding
 
-@app.post("/api/query")
+@app.post("/api/main")
 async def query_handler(request: Request):
     try:
         body = await request.json()
