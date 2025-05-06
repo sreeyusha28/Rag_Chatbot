@@ -1,10 +1,15 @@
+from fastapi import FastAPI, Request
 from supabase import create_client
 import openai
 import os
-from dotenv import load_dotenv
-import json
+from dotenv import load_dotenv  
+from mangum import Mangum
 
-load_dotenv()
+load_dotenv()  
+
+
+app = FastAPI()
+handler = Mangum(app)
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
@@ -14,16 +19,21 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 openai.api_key = OPENAI_API_KEY
 GPT_MODEL = "text-embedding-3-small"
 
-def handler(request):
+def get_query_embedding(query: str):
+    response = openai.embeddings.create(
+        model=GPT_MODEL,
+        input=query
+    )
+    return response.data[0].embedding
+
+@app.post("/api/query")
+async def query_handler(request: Request):
     try:
-        body = json.loads(request.body.decode())
+        body = await request.json()
         query_text = body.get("query", "")
         top_k = body.get("top_k", 5)
 
-        embedding = openai.embeddings.create(
-            model=GPT_MODEL,
-            input=query_text
-        ).data[0].embedding
+        embedding = get_query_embedding(query_text)
 
         response = supabase.rpc("match_documents", {
             "query_embedding": embedding,
@@ -48,22 +58,14 @@ def handler(request):
         final_answer = completion.choices[0].message.content.strip()
 
         return {
-            "statusCode": 200,
-            "body": json.dumps({
-                "answer": final_answer,
-                "sources": [
-                    {
-                        "id": r["id"],
-                        "content": r["content"],
-                        "similarity": r["similarity"]
-                    } for r in matches
-                ]
-            }),
-            "headers": {"Content-Type": "application/json"}
+            "answer": final_answer,
+            "sources": [
+                {
+                    "id": r["id"],
+                    "content": r["content"],
+                    "similarity": r["similarity"]
+                } for r in matches
+            ]
         }
     except Exception as e:
-        return {
-            "statusCode": 500,
-            "body": json.dumps({"error": str(e)}),
-            "headers": {"Content-Type": "application/json"}
-        }
+        return {"error": str(e)}
