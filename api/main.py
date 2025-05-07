@@ -1,9 +1,9 @@
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from supabase import create_client
 import openai
 import os
 from dotenv import load_dotenv
-from fastapi.middleware.cors import CORSMiddleware
 
 load_dotenv()
 
@@ -11,7 +11,7 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Replace with frontend origin in production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -23,71 +23,96 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 openai.api_key = OPENAI_API_KEY
-GPT_MODEL = "gpt-3.5-turbo"
-EMBED_MODEL = "text-embedding-3-small"
+
+GPT_MODEL = "text-embedding-3-small"
+CHAT_MODEL = "gpt-3.5-turbo"
 
 def get_query_embedding(query: str):
     response = openai.embeddings.create(
-        model=EMBED_MODEL,
+        model=GPT_MODEL,
         input=query
     )
     return response.data[0].embedding
+
+def contextualize_question(chat_history, current_question):
+    """Use chat history and user question to create a standalone question."""
+    system_prompt = (
+        "Given a chat history and the latest user question which might reference context in the chat history, "
+        "rewrite it as a standalone question. Do NOT answer the question."
+    )
+    messages = [{"role": "system", "content": system_prompt}] + chat_history + [
+        {"role": "user", "content": current_question}
+    ]
+    response = openai.chat.completions.create(
+        model=CHAT_MODEL,
+        messages=messages
+    )
+    return response.choices[0].message.content.strip()
+
+def fetch_chat_history(session_id, limit=10):
+    """Fetch latest N chat messages from Supabase for given session_id."""
+    result = supabase.table("chat_history") \
+        .select("role, content") \
+        .eq("session_id", session_id) \
+        .order("created_at", desc=True) \
+        .limit(limit) \
+        .execute()
+    if result.data:
+        return list(reversed(result.data))
+    return []
+
+def insert_chat_message(session_id, role, content):
+    """Insert a new message into Supabase chat history."""
+    supabase.table("chat_history").insert({
+        "session_id": session_id,
+        "role": role,
+        "content": content
+    }).execute()
 
 @app.post("/api/main")
 async def query_handler(request: Request):
     try:
         body = await request.json()
         query_text = body.get("query", "")
-        session_id = body.get("session_id", "default_session")
+        session_id = body.get("session_id", "default")
         top_k = body.get("top_k", 5)
 
-        # Get history from Supabase
-        history_response = supabase \
-            .from_("chat_history") \
-            .select("*") \
-            .eq("session_id", session_id) \
-            .order("created_at", desc=False) \
-            .limit(10) \
-            .execute()
+        raw_history = fetch_chat_history(session_id)
+        chat_history = [{"role": msg["role"], "content": msg["content"]} for msg in raw_history]
 
-        history = history_response.data if history_response.data else []
+        standalone_question = contextualize_question(chat_history, query_text)
 
-        # Convert history to OpenAI messages format
-        message_history = [{"role": h["role"], "content": h["content"]} for h in history]
-
-        # Embedding + document match
-        embedding = get_query_embedding(query_text)
-        match_response = supabase.rpc("match_documents", {
+        embedding = get_query_embedding(standalone_question)
+        response = supabase.rpc("match_documents", {
             "query_embedding": embedding,
             "match_count": top_k
         }).execute()
 
-        matches = match_response.data
+        matches = response.data
         context_chunks = [r["content"] for r in matches]
         context = "\n\n".join(context_chunks)
 
-        # Append current system and user prompt
-        system_prompt = "You are a helpful assistant. Use the context to answer."
-        message_history.insert(0, {"role": "system", "content": system_prompt})
-        message_history.append({"role": "user", "content": f"Context:\n{context}\n\nQuestion: {query_text}"})
-
-        # Call OpenAI
-        completion = openai.chat.completions.create(
-            model=GPT_MODEL,
-            messages=message_history
+        system_prompt = (
+            "You are a helpful assistant. Use the context below to answer the user's question. "
+            "If the answer isn't in the context, say you don't know."
         )
-        answer = completion.choices[0].message.content.strip()
+        messages = [{"role": "system", "content": system_prompt},
+                    {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {standalone_question}"}]
 
-        # Save user + assistant messages to Supabase
-        supabase.table("chat_history").insert([
-            {"session_id": session_id, "role": "user", "content": query_text},
-            {"session_id": session_id, "role": "assistant", "content": answer}
-        ]).execute()
+        completion = openai.chat.completions.create(
+            model=CHAT_MODEL,
+            messages=messages
+        )
+        final_answer = completion.choices[0].message.content.strip()
+
+        insert_chat_message(session_id, "user", query_text)
+        insert_chat_message(session_id, "assistant", final_answer)
 
         return {
-            "answer": answer,
+            "answer": final_answer,
             "sources": [
-                {"id": r["id"], "content": r["content"], "similarity": r["similarity"]} for r in matches
+                {"id": r["id"], "content": r["content"], "similarity": r["similarity"]}
+                for r in matches
             ]
         }
 
