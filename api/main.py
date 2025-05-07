@@ -3,10 +3,19 @@ from supabase import create_client
 import openai
 import os
 from dotenv import load_dotenv  
+from fastapi.middleware.cors import CORSMiddleware
 
 load_dotenv()  
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # You can replace "*" with your frontend URL for more security
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
